@@ -1,0 +1,33 @@
+stages:
+  - sast
+  - security_gate
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+sast:
+  stage: sast
+  image: python:3.12-slim
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install bandit
+  script:
+    - mkdir -p reports
+    - bandit -c bandit.yaml -r app -f json -o reports/bandit-report.json || true
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - reports/bandit-report.json
+
+security_gate:
+  stage: security_gate
+  image: python:3.12-slim
+  needs: ["sast"]
+  dependencies: ["sast"]
+  script:
+    - python security_gate.py --bandit reports/bandit-report.json --threshold high
