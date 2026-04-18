@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from . import models, schemas
 from .auth import (
@@ -147,3 +148,14 @@ def generate_report(admin: models.User = Depends(require_admin)):
         "generated_by": admin.username,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+@app.get("/search-users")
+def search_users(
+    name: str,
+    db: Session = Depends(get_db)
+):
+    query = text("SELECT id, username, full_name, role FROM users WHERE full_name LIKE :name")
+
+    result = db.execute(query, {"name": f"%{name}%"}).fetchall()
+
+    return {"users": [{"id": r[0], "username": r[1], "full_name": r[2], "role": r[3]} for r in result]}
