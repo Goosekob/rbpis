@@ -20,22 +20,21 @@ def load_bandit_findings(path: Path) -> list[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
     findings = []
     for item in data.get("results", []):
-        findings.append(
-            {
-                "tool": "bandit",
-                "severity": item.get("issue_severity", "LOW").upper(),
-                "severity_level": SEVERITY_ORDER.get(item.get("issue_severity", "LOW").upper(), 0),
-                "test_id": item.get("test_id", "UNKNOWN"),
-                "file": item.get("filename", "unknown"),
-                "line": item.get("line_number", "?"),
-                "message": item.get("issue_text", ""),
-            }
-        )
+        severity = item.get("issue_severity", "LOW").upper()
+        findings.append({
+            "tool": "bandit",
+            "severity": severity,
+            "severity_level": SEVERITY_ORDER.get(severity, 0),
+            "test_id": item.get("test_id", "UNKNOWN"),
+            "file": item.get("filename", "unknown"),
+            "line": item.get("line_number", "?"),
+            "message": item.get("issue_text", ""),
+        })
     return findings
 
 
 def load_zap_findings_from_html(path: Path) -> list[dict]:
-    """Парсит HTML отчёт ZAP и возвращает только HIGH уязвимости"""
+    """Парсит HTML отчёт ZAP, находит только HIGH и CRITICAL"""
     if not path.exists():
         print(f"[WARN] ZAP report not found: {path}")
         return []
@@ -43,7 +42,7 @@ def load_zap_findings_from_html(path: Path) -> list[dict]:
     content = path.read_text(encoding="utf-8")
     findings = []
     
-    # Ищем строки с HIGH или CRITICAL уязвимостями
+    # Ищем HIGH и CRITICAL уязвимости в HTML таблице ZAP
     pattern = r'<tr[^>]*>\s*<td[^>]*>(HIGH|CRITICAL)[^<]*<\/td>\s*<td[^>]*>([^<]+)<\/td>'
     matches = re.findall(pattern, content, re.IGNORECASE)
     
@@ -53,12 +52,13 @@ def load_zap_findings_from_html(path: Path) -> list[dict]:
             "tool": "zap",
             "severity": severity_upper,
             "severity_level": SEVERITY_ORDER.get(severity_upper, 0),
-            "test_id": "ZAP",
+            "test_id": "ZAP_ALERT",
             "file": path.name,
             "line": "?",
             "message": name.strip(),
         })
     
+    print(f"[INFO] Found {len(findings)} HIGH/CRITICAL issues in {path.name}")
     return findings
 
 
@@ -88,7 +88,7 @@ def main() -> int:
     if args.zap_active:
         all_findings.extend(load_zap_findings_from_html(Path(args.zap_active)))
 
-    # Фильтруем только те, что выше порога
+    # Фильтруем уязвимости выше порога
     blocked = [f for f in all_findings if f["severity_level"] >= threshold]
 
     print(f"\n{'='*60}")
