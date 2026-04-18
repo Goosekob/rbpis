@@ -51,50 +51,50 @@ jobs:
         run: |
           curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/search-users?name=test
 
-      - name: Create ZAP reports directory
+      - name: Create ZAP reports directory with proper permissions
         run: |
-          mkdir -p zap-reports
-          chmod 777 zap-reports
+          mkdir -p $(pwd)/zap-reports
+          sudo chmod -R 777 $(pwd)/zap-reports
 
       - name: Passive Scan with ZAP
         run: |
           docker run --rm \
-            -v $(pwd):/zap/wrk \
+            -v $(pwd)/zap-reports:/zap/wrk \
             --network="host" \
             zaproxy/zap-stable \
             zap-full-scan.py \
             -t "http://localhost:8000/search-users?name=test" \
-            -r /zap/wrk/zap_passive_report.html
+            -r zap_passive_report.html
 
       - name: Active Scan with ZAP (API)
         run: |
           docker run --rm \
-            -v $(pwd):/zap/wrk \
+            -v $(pwd)/zap-reports:/zap/wrk \
             --network="host" \
             zaproxy/zap-stable \
             zap-api-scan.py \
             -t "http://localhost:8000/openapi.json" \
             -f openapi \
-            -r /zap/wrk/zap_active_report.html
+            -r zap_active_report.html
 
       - name: Upload ZAP passive report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-passive-report
-          path: zap_passive_report.html
+          path: zap-reports/zap_passive_report.html
 
       - name: Upload ZAP active report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-active-report
-          path: zap_active_report.html
+          path: zap-reports/zap_active_report.html
 
       - name: Stop application
         if: always()
         run: docker compose down
-        
+
   build:
     runs-on: ubuntu-latest
 
