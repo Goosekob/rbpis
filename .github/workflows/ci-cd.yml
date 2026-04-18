@@ -65,6 +65,7 @@ jobs:
             zap-full-scan.py \
             -t "http://localhost:8000/search-users?name=test" \
             -r zap_passive_report.html
+            -l HIGH
 
       - name: Active Scan with ZAP (API)
         run: |
@@ -76,6 +77,7 @@ jobs:
             -t "http://localhost:8000/openapi.json" \
             -f openapi \
             -r zap_active_report.html
+            -l HIGH
 
       - name: Upload ZAP passive report
         if: always()
