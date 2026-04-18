@@ -7,9 +7,9 @@ on:
     branches: [ main, master ]
 
 jobs:
-  security-scan:
+  # SAST: Bandit сканирование кода
+  sast:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,21 +23,19 @@ jobs:
         run: pip install bandit
 
       - name: Run bandit scan
-        run: bandit -c bandit.yaml -r app/ -f json -o bandit-report-before.json
-
-      - name: Run security gate
-        run: python security_gate.py --bandit bandit-report-before.json --threshold high
+        run: |
+          mkdir -p reports
+          bandit -c bandit.yaml -r app/ -f json -o reports/bandit-report.json || true
 
       - name: Upload bandit report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
-          path: bandit-report-before.json
+          path: reports/bandit-report.json
 
-  dast-scan:
+  # DAST: Запуск приложения и ZAP сканирование
+  dast:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -51,55 +49,91 @@ jobs:
         run: |
           curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/search-users?name=test
 
-      - name: Create ZAP reports directory with proper permissions
-        run: |
-          mkdir -p $(pwd)/zap-reports
-          sudo chmod -R 777 $(pwd)/zap-reports
+      - name: Create reports directory
+        run: mkdir -p reports
 
       - name: Passive Scan with ZAP
         continue-on-error: true
         run: |
           docker run --rm \
-            -v $(pwd)/zap-reports:/zap/wrk \
+            -v $(pwd)/reports:/zap/wrk \
             --network="host" \
             zaproxy/zap-stable \
             zap-full-scan.py \
             -t "http://localhost:8000/search-users?name=test" \
-            -r zap_passive_report.html
+            -r zap_passive.html \
 
       - name: Active Scan with ZAP
         continue-on-error: true
         run: |
           docker run --rm \
-            -v $(pwd)/zap-reports:/zap/wrk \
+            -v $(pwd)/reports:/zap/wrk \
             --network="host" \
             zaproxy/zap-stable \
             zap-api-scan.py \
             -t "http://localhost:8000/openapi.json" \
             -f openapi \
-            -r zap_active_report.html
+            -r zap_active.html \
+
+      - name: Stop application
+        if: always()
+        run: docker compose down
 
       - name: Upload ZAP passive report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-passive-report
-          path: zap-reports/zap_passive_report.html
+          path: reports/zap_passive.html
 
       - name: Upload ZAP active report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: zap-active-report
-          path: zap-reports/zap_active_report.html
+          path: reports/zap_active.html
 
-      - name: Stop application
-        if: always()
-        run: docker compose down
+  # Security Gate: проверяем все отчёты
+  security-gate:
+    runs-on: ubuntu-latest
+    needs: [sast, dast]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Download bandit report
+        uses: actions/download-artifact@v4
+        with:
+          name: bandit-report
+          path: reports/
+
+      - name: Download ZAP passive report
+        uses: actions/download-artifact@v4
+        with:
+          name: zap-passive-report
+          path: reports/
+
+      - name: Download ZAP active report
+        uses: actions/download-artifact@v4
+        with:
+          name: zap-active-report
+          path: reports/
+
+      - name: List downloaded reports
+        run: ls -la reports/
+
+      - name: Run security gate
+        run: |
+          python security_gate.py \
+            --bandit reports/bandit-report.json \
+            --zap-passive reports/zap_passive.html \
+            --zap-active reports/zap_active.html \
+            --threshold high
+
+  # Build (только если security-gate прошёл)
   build:
     runs-on: ubuntu-latest
-
+    needs: security-gate
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -114,11 +148,11 @@ jobs:
           docker stop test-api
           docker rm test-api
 
+  # Deploy (только на main/master)
   deploy:
     runs-on: ubuntu-latest
-    needs: [build, dast-scan]
+    needs: build
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
