@@ -51,8 +51,11 @@ jobs:
         run: |
           curl --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8000/search-users?name=test
 
+
       - name: Create ZAP reports directory
         run: mkdir -p zap-reports
+        chmod 777 zap-reports
+        cd zap-reports
 
       - name: Passive Scan with ZAP
         run: |
