@@ -54,8 +54,8 @@ jobs:
 
       - name: Create ZAP reports directory
         run: mkdir -p zap-reports
-        chmod 777 zap-reports
-        cd zap-reports
+             chmod 777 zap-reports
+             cd zap-reports
 
       - name: Passive Scan with ZAP
         run: |
